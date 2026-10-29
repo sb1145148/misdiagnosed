@@ -1,0 +1,15 @@
+# 凭据 —— 永远不要提交
+*.token
+*.key
+*.pem
+.env
+.env.*
+*.headers
+*credentials*
+*secret*
+
+# 本地产物
+*.log
+__pycache__/
+.DS_Store
+node_modules/
