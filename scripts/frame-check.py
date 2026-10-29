@@ -4,6 +4,7 @@
 两个模式：
   frame-check.py DIR           首帧是不是恰好一行
   frame-check.py --identity DIR  目录名和 header 的 id/cwd 是否一致
+  frame-check.py -h, --help     显示这段说明
 
 不改任何文件。退出码 0 = 全部正常，1 = 有问题。
 """
@@ -110,6 +111,9 @@ def check_identity(root):
 
 if __name__ == '__main__':
     args = [a for a in sys.argv[1:]]
+    if any(a in ('-h', '--help') for a in args):
+        print(__doc__.strip())
+        sys.exit(0)
     identity = '--identity' in args
     args = [a for a in args if a != '--identity']
     root = args[0] if args else os.path.expanduser('~/.dsh/sessions')
