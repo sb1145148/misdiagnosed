@@ -4,7 +4,7 @@
 
 ---
 
-## 12. `pkill -f` 打中自己
+## 17. `pkill -f` 打中自己
 
 **现象**
 
@@ -47,7 +47,7 @@ ps -eo pid,args | awk '/pattern/ && !/awk/ {print $1}' | xargs -r kill
 
 ---
 
-## 13. apt 官方源慢到以为卡死
+## 18. apt 官方源慢到以为卡死
 
 **现象**
 
@@ -93,7 +93,7 @@ apt-get install -y some-package
 
 ---
 
-## 17. `grep -c` 找不到时给两个 0
+## 19. `grep -c` 找不到时给两个 0
 
 **现象**
 
@@ -152,7 +152,7 @@ n=$(grep -c "pattern" file 2>/dev/null | head -1); n=${n:-0}
 
 ---
 
-## 18. `awk` 引号不配对，检查永远"通过"
+## 20. `awk` 引号不配对，检查永远"通过"
 
 **现象**
 
@@ -206,7 +206,7 @@ awk '{ printf "%-40s %s\n", $7, $8 }' file
 
 ---
 
-## 19. 硬编码白名单，工具永远说"没问题"
+## 21. 硬编码白名单，工具永远说"没问题"
 
 **现象**
 
@@ -247,6 +247,213 @@ tool --list-types   # 改为读运行时的导出，而不是内置常量
 
 只在"两边必须同步"的场景成立。
 有些白名单本来就该独立（安全策略、协议版本），那种不能从运行时取。
+
+---
+
+## 22. `wc -l` 数的是换行符，不是行
+
+**现象**
+
+```console
+$ printf 'abc' | wc -l
+0
+```
+
+明明有一行内容，算出来 0。
+
+**判断信号**
+
+```bash
+printf 'abc'   | wc -l    # 0
+printf 'abc\n' | wc -l    # 1
+```
+
+同一个内容，加不加结尾换行，结果差 1 → 就是这个坑。
+
+**根因**
+
+`wc -l` 统计的是 `\n` 的个数，不是「行数」。
+
+文件最后一行没有换行符时，那一行**不计入**。
+
+**解法**
+
+```bash
+awk 'END { print NR }' file                 # 按记录数
+grep -c '' file                             # 非空行数（注意条目 19 的坑）
+python3 -c "print(len(open('file').read().splitlines()))"
+```
+
+**代价**
+
+我判断「首帧是不是恰好一行」时，用了 `count('\n')`，
+结果是 0 行而不是 1 行——差点把正常文件判成坏的。
+
+**适用边界**
+
+所有按「行」计数的场景。二进制文件、没有结尾换行的单行文件都会踩。
+
+---
+
+## 23. `zstd: command not found` ≠ 解不了 zstd
+
+**现象**
+
+```console
+$ zstd -d file.zst
+bash: zstd: command not found
+$ apt-get install -y zstd
+E: Unable to locate package zstd
+```
+
+两条路都断，于是以为这条路走不通。
+
+**判断信号**
+
+```bash
+command -v zstd              # 空
+ldconfig -p | grep zstd      # 有 libzstd.so.1
+```
+
+命令没有、库有 → 就是这个坑。
+
+**根因**
+
+**命令行工具和库是两回事。**
+
+`libzstd.so.1` 几乎在所有 Linux 上都存在——Python、Node、curl、systemd 都依赖它。
+但 `zstd` 这个可执行文件属于单独的可选包，很多精简镜像里没有。
+
+**解法**
+
+直接调库，不走 CLI：
+
+```python
+import ctypes
+lib = ctypes.CDLL('libzstd.so.1')
+lib.ZSTD_decompress.restype  = ctypes.c_size_t
+lib.ZSTD_decompress.argtypes = [ctypes.c_void_p, ctypes.c_size_t,
+                                ctypes.c_void_p, ctypes.c_size_t]
+```
+
+多帧文件还要配 `ZSTD_findFrameCompressedSize` 逐帧切（见条目 24）。
+
+**代价**
+
+一度以为「没有 zstd 就没法读这些文件」，于是想绕开问题，而不是解决问题。
+
+**适用边界**
+
+只对「库在、CLI 不在」成立。
+库也没有的极简容器里，必须装（或换用镜像）。
+
+---
+
+## 24. Node 的 `zstdDecompressSync` 只解第一帧，不报错
+
+**现象**
+
+```console
+$ node -e "...zlib.zstdDecompressSync(buf)..."
+文件 26 字节   得到 "AAAA"      期望 "AAAABBBB"
+```
+
+两个帧拼成的文件，只解出前半段，**不抛错**。
+
+**判断信号**
+
+用 `ZSTD_findFrameCompressedSize` 数帧数，和 `zstdDecompressSync` 的输出比对：
+
+```bash
+python3 - <<'PY'
+import ctypes
+lib = ctypes.CDLL('libzstd.so.1')
+lib.ZSTD_findFrameCompressedSize.restype = ctypes.c_size_t
+lib.ZSTD_findFrameCompressedSize.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+b = open('file.zst','rb').read()
+off, n = 0, 0
+while off < len(b):
+    s = lib.ZSTD_findFrameCompressedSize(b[off:], len(b)-off)
+    if not s: break
+    off += s; n += 1
+print('帧数', n)
+PY
+```
+
+帧数 > 1，而 Node 的结果只对应第一帧 → 就是这个坑。
+
+**根因**
+
+Node 的 zstd API 按**单个帧**处理。遇到后续帧就停，
+把「后面还有数据」当成正常结束——**不报错、不提示**。
+
+**解法**
+
+先切帧，再逐帧解：
+
+```js
+let off = 0;
+const parts = [];
+while (off < buf.length) {
+  const n = frameSize(buf.subarray(off));          // ZSTD_findFrameCompressedSize
+  parts.push(zlib.zstdDecompressSync(buf.subarray(off, off + n)));
+  off += n;
+}
+```
+
+**代价**
+
+**读到一半的数据看起来完全合法**，会得出「文件只有这么多内容」的错误结论，
+然后拿这个结论去判断别的环节。
+
+**适用边界**
+
+只在多帧可选压缩格式上成立。
+单帧文件（`zstd -o` 的产出）没有这个问题——但那正是条目 6 的坑。
+
+---
+
+## 25. 全仓库搜不到某个错误码，于是以为不是这份代码
+
+**现象**
+
+```bash
+grep -rn "SOME_ERROR_CODE" ./src ./node_modules/     # 无结果
+```
+
+而运行时这个错误码确实出现了。
+
+**判断信号**
+
+```bash
+grep -rl "SOME_ERROR" . 2>/dev/null | head
+grep -rl "SOME_" . 2>/dev/null | head          # 放宽到前缀
+```
+
+两个都为空 → 要么这个码是拼出来的，要么它在编译产物里。
+
+**根因**
+
+两种常见情况：
+
+1. **错误码是运行时拼的**——`"PREFIX_" + reason`，源码里永远搜不到完整字面量
+2. **代码不在这个语言里**——前端是 TypeScript，报错来自 Android 侧的 Kotlin（已编译进 APK）
+
+**解法**
+
+- 搜**前缀或片段**，不要搜完整字面量
+- 搜不到就换层：看是不是另一个进程、另一种语言抛的
+- 有编译产物时，直接搜产物（DEX / 字节码），或者去源码仓库搜
+
+**代价**
+
+会得出「这不是这份代码的问题」的结论，然后往完全错误的方向查——
+甚至去怀疑是底层库或系统的问题。
+
+**适用边界**
+
+只对「错误码可能被拼接、或来自另一层」成立。
+有些情况确实就是找不到，别把这条当成万能的。
 
 ## 附：常用判断命令速查
 

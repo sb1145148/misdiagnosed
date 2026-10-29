@@ -35,6 +35,8 @@
 播放只有 7     →  以为是内容不行      实际是同质内容被折叠
 会话不见了    →  以为是索引坏了      实际是首帧不是一行
 改名整理      →  以为只是挪个位置    实际让整个工作区挂掉
+备份变大      →  以为备份工具变胖    实际是一个附件存了两份
+读到的数据少  →  以为文件就这么多    实际解压只解了第一帧
 ```
 
 这四条的共同点：**它们都会让你往错误的方向查**。
@@ -46,45 +48,51 @@
 ### 网络 / DNS
 | # | 坑 | 一句话信号 |
 | --- | --- | --- |
-| [1](docs/network.md#1-无-ipv6-出口时-python-每个请求卡-3040-秒) | 无 IPv6 出口时 Python 请求卡 36 秒 | curl 快、Python 慢，且 `getaddrinfo` 首条是 AAAA |
+| [1](docs/network.md#1-无-ipv6-出口时-python-每个请求卡-3040-秒) | 无 IPv6 出口时 Python 每个请求卡 30–40 秒 | curl 快、Python 慢，且 `getaddrinfo` 首条是 AAAA |
 | [2](docs/network.md#2-dns-解析固定卡-5-秒) | DNS 解析固定卡 5 秒 | 每次解析耗时零波动，且 `resolv.conf` 里是不可达的 DNS |
 
 ### 文件系统
 | # | 坑 | 一句话信号 |
 | --- | --- | --- |
-| [3](docs/filesystem.md#3-硬链接被摊成真实拷贝) | 硬链接被摊成两份真实拷贝 | 两个路径 sha256 相同，`nlink` 各为 1 |
+| [3](docs/filesystem.md#3-硬链接被摊成真实拷贝) | 硬链接被摊成真实拷贝 | 两个路径 sha256 相同，`nlink` 各为 1 |
 | [4](docs/filesystem.md#4-sdcard-上-hardlink-永远失败) | `/sdcard` 上 hardlink 永远失败 | `ln` 返回 `Operation not permitted` |
+| [5](docs/filesystem.md#5-备份从-100-mb-涨到-330-mb你怪错了对象) | 备份从 100 MB 涨到 330 MB，你怪错了对象 | 两个路径 sha256 相同、`nlink` 各为 1 |
 
 ### 会话存储
 | # | 坑 | 一句话信号 |
 | --- | --- | --- |
-| [14](docs/session-integrity.md#14-会话文件在磁盘上但界面里消失了) | 会话文件在磁盘上，界面里"消失了" | 首帧解出来不是 1 行 |
-| [15](docs/session-integrity.md#15-改目录名让整个工作区一起挂掉) | 改目录名让整个工作区挂掉 | 目录名 ≠ 头部里的 `id` |
-| [16](docs/session-integrity.md#16-备份每次都成功但永远导不进去) | 备份成功，永远导不进去 | 归档里有指向包外的软链 |
+| [6](docs/session-integrity.md#6-会话文件在磁盘上但界面里消失了) | 会话文件在磁盘上，但界面里"消失了" | 首帧解出来不是 1 行 |
+| [7](docs/session-integrity.md#7-改目录名让整个工作区一起挂掉) | 改目录名，让整个工作区一起挂掉 | 目录名 ≠ 头部里的 `id` |
+| [8](docs/session-integrity.md#8-备份每次都成功但永远导不进去) | 备份每次都成功，但永远导不进去 | 归档里有指向包外的软链 |
 
 ### 数据口径
 | # | 坑 | 一句话信号 |
 | --- | --- | --- |
-| [5](docs/data-hygiene.md#5-把采集轮次当自然日) | 把「采集轮次」当「自然日」 | 同一天出现两个不同的「第 N 天」 |
-| [6](docs/data-hygiene.md#6-把累计值当首日值) | 把累计播放当首日播放 | 刚发的视频「暴跌」，老视频「上涨」 |
-| [7](docs/data-hygiene.md#7-容器-utc-写进-08-的报告) | 容器 UTC 写进 +08 的报告 | 所有时间戳统一差 8 小时 |
+| [9](docs/data-hygiene.md#9-把采集轮次当自然日) | 把「采集轮次」当「自然日」 | 同一天出现两个不同的「第 N 天」 |
+| [10](docs/data-hygiene.md#10-把累计值当首日值) | 把累计值当首日值 | 刚发的视频「暴跌」，老视频「上涨」 |
+| [11](docs/data-hygiene.md#11-容器-utc-写进-08-的报告) | 容器 UTC 写进 +08 的报告 | 所有时间戳统一差 8 小时 |
 
 ### 平台行为
 | # | 坑 | 一句话信号 |
 | --- | --- | --- |
-| [8](docs/platform-quirks.md#8-接口看着正常但脚本没有任何输出) | 接口看着正常但脚本没输出 | curl 通、脚本挂，请求数远少于预期 |
-| [9](docs/platform-quirks.md#9-搜索结果不是全量) | 搜索结果不是全量 | 数字每天按「搜索上限」整倍数跳 |
-| [10](docs/platform-quirks.md#10-改名被误判成新账号) | 改名被误判成「新账号出现」 | 新旧名字的 `mid` 完全相同 |
-| [11](docs/platform-quirks.md#11-同质内容被直接折叠) | 同质内容被直接折叠 | 一模一样的内容，播放从 100+ 掉到个位数 |
+| [12](docs/platform-quirks.md#12-接口看着正常但脚本没有任何输出) | 接口看着正常但脚本没有任何输出 | curl 通、脚本挂，请求数远少于预期 |
+| [13](docs/platform-quirks.md#13-搜索结果不是全量) | 搜索结果不是全量 | 数字每天按「搜索上限」整倍数跳 |
+| [14](docs/platform-quirks.md#14-改名被误判成新账号出现) | 改名被误判成新账号出现 | 新旧名字的 `mid` 完全相同 |
+| [15](docs/platform-quirks.md#15-同质内容被直接折叠) | 同质内容被直接折叠 | 一模一样的内容，播放从 100+ 掉到个位数 |
+| [16](docs/platform-quirks.md#16-发版成功但一键安装一直-404) | 发版成功，但一键安装一直 404 | release 的 `assets` 是空列表 |
 
 ### 工具
 | # | 坑 | 一句话信号 |
 | --- | --- | --- |
-| [12](docs/tooling.md#12-pkill--f-打中自己) | `pkill -f` 打中自己 | 命令执行完，自己也被杀了 |
-| [13](docs/tooling.md#13-apt-官方源慢到以为卡死) | apt 官方源慢到以为卡死 | 下载速度 < 50 KB/s，且 `http` 进程挂着不动 |
-| [17](docs/tooling.md#17-grep--c-找不到时给两个-0) | `grep -c` 找不到时给两个 0 | 变量里是 `0` 和 `0` 两行 |
-| [18](docs/tooling.md#18-awk-引号不配对检查永远通过) | `awk` 引号不配对，检查永远"通过" | 摘掉 `2>/dev/null` 看到 `runaway string constant` |
-| [19](docs/tooling.md#19-硬编码白名单工具永远说没问题) | 硬编码白名单，工具永远说"没问题" | 工具的类型列表和运行时有差集 |
+| [17](docs/tooling.md#17-pkill--f-打中自己) | `pkill -f` 打中自己 | 命令执行完，自己也被杀了 |
+| [18](docs/tooling.md#18-apt-官方源慢到以为卡死) | apt 官方源慢到以为卡死 | 下载速度 < 50 KB/s，且 `http` 进程挂着不动 |
+| [19](docs/tooling.md#19-grep--c-找不到时给两个-0) | `grep -c` 找不到时给两个 0 | 变量里是 `0` 和 `0` 两行 |
+| [20](docs/tooling.md#20-awk-引号不配对检查永远通过) | `awk` 引号不配对，检查永远"通过" | 摘掉 `2>/dev/null` 看到 `runaway string constant` |
+| [21](docs/tooling.md#21-硬编码白名单工具永远说没问题) | 硬编码白名单，工具永远说"没问题" | 工具的类型列表和运行时有差集 |
+| [22](docs/tooling.md#22-wc--l-数的是换行符不是行) | `wc -l` 数的是换行符，不是行 | `printf abc \| wc -l` 得 0 |
+| [23](docs/tooling.md#23-zstd-command-not-found--解不了-zstd) | `zstd: command not found` ≠ 解不了 zstd | 命令没有、`libzstd` 在 |
+| [24](docs/tooling.md#24-node-的-zstddecompresssync-只解第一帧不报错) | Node 的 `zstdDecompressSync` 只解第一帧，不报错 | 帧数 > 1，但结果只对应第一帧 |
+| [25](docs/tooling.md#25-全仓库搜不到某个错误码于是以为不是这份代码) | 全仓库搜不到某个错误码，于是以为不是这份代码 | 搜前缀也为空 |
 
 ---
 

@@ -4,7 +4,7 @@
 
 ---
 
-## 8. 接口看着正常但脚本没有任何输出
+## 12. 接口看着正常但脚本没有任何输出
 
 **现象**
 
@@ -41,7 +41,7 @@ time python3 -c "import urllib.request;urllib.request.urlopen('https://api.examp
 
 ---
 
-## 9. 搜索结果不是全量
+## 13. 搜索结果不是全量
 
 **现象**
 
@@ -74,7 +74,7 @@ time python3 -c "import urllib.request;urllib.request.urlopen('https://api.examp
 
 ---
 
-## 10. 改名被误判成新账号出现
+## 14. 改名被误判成新账号出现
 
 **现象**
 
@@ -109,7 +109,7 @@ curl -s '.../card?mid=<同一个 mid>' | grep -o '"name":"[^"]*"'
 
 ---
 
-## 11. 同质内容被直接折叠
+## 15. 同质内容被直接折叠
 
 **现象**
 
@@ -147,3 +147,61 @@ curl -s '.../card?mid=<同一个 mid>' | grep -o '"name":"[^"]*"'
 **适用边界**
 
 所有有推荐系统的平台。**发布策略本身是变量**，做实验时必须控制。
+
+---
+
+## 16. 发版成功，但一键安装一直 404
+
+**现象**
+
+```console
+$ curl -fsSL .../install.sh | sh
+下载失败
+```
+
+release 页面看起来正常，tag 也在，附件区却是空的。
+
+**判断信号**
+
+```bash
+curl -s https://api.github.com/repos/OWNER/REPO/releases/latest \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['tag_name'], [a['name'] for a in d['assets']])"
+```
+
+输出里 `assets` 是空列表 `[]` → 就是这个坑。
+
+**根因**
+
+**创建 release 和上传附件是两次独立的 API 调用。**
+
+只做前者时：
+
+- release 正常出现在页面上
+- tag 正常创建
+- 网页没有明显异常
+
+但所有 `releases/download/<tag>/<file>` 链接**全是 404**。
+
+所以用户看到的现象是「下载失败」，而不是「附件不存在」，
+排查方向容易跑到网络或脚本上。
+
+**解法**
+
+发版脚本把「创建 release」和「上传附件」放在同一步，
+并且**发版后强制验证**：
+
+```bash
+assets=$(curl -s .../releases/latest | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('assets') or []))")
+[ "$assets" -gt 0 ] || { echo "附件没传，发版不完整"; exit 1; }
+```
+
+**代价**
+
+用户那边只看到「下载失败」。我以为是脚本拼 URL 拼错了，查了一轮。
+
+**适用边界**
+
+所有「元数据 + 制品分离」的发布系统都这样：
+npm 的 `dist-tags`、Docker 的 manifest、apt 的 Packages 索引。
+创建索引和上传内容分开时，都会出现「看着发布成功、实际拿不到」。
+
