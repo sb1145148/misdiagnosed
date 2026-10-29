@@ -56,7 +56,7 @@
 | --- | --- | --- |
 | [3](docs/filesystem.md#3-硬链接被摊成真实拷贝) | 硬链接被摊成真实拷贝 | 两个路径 sha256 相同，`nlink` 各为 1 |
 | [4](docs/filesystem.md#4-sdcard-上-hardlink-永远失败) | `/sdcard` 上 hardlink 永远失败 | `ln` 返回 `Operation not permitted` |
-| [5](docs/filesystem.md#5-备份从-100-mb-涨到-330-mb你怪错了对象) | 备份从 100 MB 涨到 330 MB，你怪错了对象 | 两个路径 sha256 相同、`nlink` 各为 1 |
+| [5](docs/filesystem.md#5-备份从-100-mb-涨到-330-mb你怪错了对象) | 备份从 100 MB 涨到 330 MB，你怪错了对象 | 备份体积突然 ×3，而 `du` 显示源数据没涨 |
 
 ### 会话存储
 | # | 坑 | 一句话信号 |
