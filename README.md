@@ -33,6 +33,8 @@
 磁盘很大      →  以为是附件多        实际是硬链接被摊平
 天数是第 13 天 →  以为是记录详细      实际是把采集轮次当自然日
 播放只有 7     →  以为是内容不行      实际是同质内容被折叠
+会话不见了    →  以为是索引坏了      实际是首帧不是一行
+改名整理      →  以为只是挪个位置    实际让整个工作区挂掉
 ```
 
 这四条的共同点：**它们都会让你往错误的方向查**。
@@ -52,6 +54,13 @@
 | --- | --- | --- |
 | [3](docs/filesystem.md#3-硬链接被摊成真实拷贝) | 硬链接被摊成两份真实拷贝 | 两个路径 sha256 相同，`nlink` 各为 1 |
 | [4](docs/filesystem.md#4-sdcard-上-hardlink-永远失败) | `/sdcard` 上 hardlink 永远失败 | `ln` 返回 `Operation not permitted` |
+
+### 会话存储
+| # | 坑 | 一句话信号 |
+| --- | --- | --- |
+| [14](docs/session-integrity.md#14-会话文件在磁盘上但界面里消失了) | 会话文件在磁盘上，界面里"消失了" | 首帧解出来不是 1 行 |
+| [15](docs/session-integrity.md#15-改目录名让整个工作区一起挂掉) | 改目录名让整个工作区挂掉 | 目录名 ≠ 头部里的 `id` |
+| [16](docs/session-integrity.md#16-备份每次都成功但永远导不进去) | 备份成功，永远导不进去 | 归档里有指向包外的软链 |
 
 ### 数据口径
 | # | 坑 | 一句话信号 |
@@ -73,18 +82,23 @@
 | --- | --- | --- |
 | [12](docs/tooling.md#12-pkill--f-打中自己) | `pkill -f` 打中自己 | 命令执行完，自己也被杀了 |
 | [13](docs/tooling.md#13-apt-官方源慢到以为卡死) | apt 官方源慢到以为卡死 | 下载速度 < 50 KB/s，且 `http` 进程挂着不动 |
+| [17](docs/tooling.md#17-grep--c-找不到时给两个-0) | `grep -c` 找不到时给两个 0 | 变量里是 `0` 和 `0` 两行 |
+| [18](docs/tooling.md#18-awk-引号不配对检查永远通过) | `awk` 引号不配对，检查永远"通过" | 摘掉 `2>/dev/null` 看到 `runaway string constant` |
+| [19](docs/tooling.md#19-硬编码白名单工具永远说没问题) | 硬编码白名单，工具永远说"没问题" | 工具的类型列表和运行时有差集 |
 
 ---
 
 ## 脚本
 
 ```bash
-scripts/net-probe.sh          # 判断「慢」是不是地址族问题
-scripts/dup-scan.sh DIR       # 找同内容多拷贝（并给出可省的体积）
-scripts/timezone-check.sh     # 检查容器时区与报告时区是否一致
+scripts/net-probe.sh             # 判断「慢」是不是地址族问题
+scripts/dup-scan.sh DIR          # 找同内容多拷贝（并给出可省的体积）
+scripts/timezone-check.sh        # 检查容器时区与报告时区是否一致
+scripts/frame-check.py DIR       # 会话文件首帧是不是恰好一行
+scripts/frame-check.py --identity DIR   # 目录名和头部里的 id/cwd 对不对得上
 ```
 
-三个脚本都只读，不改任何东西。
+五个脚本都只读，不改任何东西。
 
 ---
 
