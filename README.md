@@ -80,6 +80,8 @@
 | [14](docs/platform-quirks.md#14-改名被误判成新账号出现) | 改名被误判成新账号出现 | 新旧名字的 `mid` 完全相同 |
 | [15](docs/platform-quirks.md#15-同质内容被直接折叠) | 同质内容被直接折叠 | 一模一样的内容，播放从 100+ 掉到个位数 |
 | [16](docs/platform-quirks.md#16-发版成功但一键安装一直-404) | 发版成功，但一键安装一直 404 | release 的 `assets` 是空列表 |
+| [26](docs/platform-quirks.md#26-改了代码部署成功用户看到的还是旧的) | 改了代码、部署成功，用户看到的还是旧的 | 线上 `curl` 到的字节数和本地文件对不上 |
+| [29](docs/platform-quirks.md#29-改了配置没生效它是编译期常量) | 改了配置没生效：它是编译期常量 | `grep` 到那份数据写在源码的 `const` 里 |
 
 ### 工具
 | # | 坑 | 一句话信号 |
@@ -93,12 +95,15 @@
 | [23](docs/tooling.md#23-zstd-command-not-found--解不了-zstd) | `zstd: command not found` ≠ 解不了 zstd | 命令没有、`libzstd` 在 |
 | [24](docs/tooling.md#24-node-的-zstddecompresssync-只解第一帧不报错) | Node 的 `zstdDecompressSync` 只解第一帧，不报错 | 帧数 > 1，但结果只对应第一帧 |
 | [25](docs/tooling.md#25-全仓库搜不到某个错误码于是以为不是这份代码) | 全仓库搜不到某个错误码，于是以为不是这份代码 | 搜前缀也为空 |
+| [27](docs/tooling.md#27-cmd--tail-让退出码永远是-0) | `cmd \| tail` 让退出码永远是 0 | `false \| tail -1` 也返回 0 |
+| [28](docs/tooling.md#28-数据看起来是空的其实是外面包了一层) | 数据看起来是空的，其实外面包了一层 | 顶层 `keys` 是 `[ok, data]` |
 
 ---
 
 ## 脚本
 
 ```bash
+scripts/check-links.py           # 检查 README 索引里的锚点是否还有效
 scripts/net-probe.sh             # 判断「慢」是不是地址族问题
 scripts/dup-scan.sh DIR          # 找同内容多拷贝（并给出可省的体积）
 scripts/timezone-check.sh        # 检查容器时区与报告时区是否一致
@@ -106,7 +111,7 @@ scripts/frame-check.py DIR       # 会话文件首帧是不是恰好一行
 scripts/frame-check.py --identity DIR   # 目录名和头部里的 id/cwd 对不对得上
 ```
 
-五个脚本都只读，不改任何东西。
+六个脚本都只读，不改任何东西。
 
 ---
 
