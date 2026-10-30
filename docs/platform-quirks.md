@@ -205,3 +205,106 @@ assets=$(curl -s .../releases/latest | python3 -c "import json,sys; print(len(js
 npm 的 `dist-tags`、Docker 的 manifest、apt 的 Packages 索引。
 创建索引和上传内容分开时，都会出现「看着发布成功、实际拿不到」。
 
+
+---
+
+## 26. 改了代码、部署成功，用户看到的还是旧的
+
+**现象**
+
+本地文件明明改了，`wrangler` / `vercel` / `gh-pages` 都报「部署成功」，
+刷新页面还是旧行为。**服务端确实换了，浏览器拿的是缓存。**
+
+**判断信号**
+
+比大小，最快：
+
+```bash
+curl -s https://站点/app.js | wc -c      # 线上实际字节数
+wc -c frontend/app.js                    # 本地字节数
+```
+
+**对不上** → 是缓存，不是部署失败。再确认是哪一层：
+
+```bash
+curl -s https://站点/ | grep -o 'app.js?v=[a-z0-9]*'   # ① URL 上的版本号
+curl -s https://站点/sw.js | grep -o "CACHE = '[^']*'" # ② Service Worker 缓存名
+```
+
+**根因**
+
+静态站通常有**三层缓存标识**，改文件时必须一起动：
+
+| 层 | 内容 | 漏了会怎样 |
+| --- | --- | --- |
+| ① URL 查询串 | `app.js?v=<内容哈希>` | 旧 JS 在同一 URL 下被缓存 4 小时 |
+| ② Service Worker | `const CACHE = 'site-<哈希>'` | SW 从预缓存里回旧文件（cache-first） |
+| ③ 预构建产物 | `tailwind.css` 等 | 新加的类不存在，样式静默失效 |
+
+**解法**
+
+发版脚本一次性对齐（内容哈希而不是手写版本号）：
+
+```bash
+node build/release.mjs      # 重写 HTML 里的 ?v=、sw.js 的 CACHE 和 SHELL
+npx tailwindcss -i input.css -o ../frontend/tailwind.css --minify   # 改了 class 才需要
+```
+
+改完用上面两条 `curl` 复核。
+
+**代价**
+
+会怀疑「部署没生效」「CDN 坏了」「代码有 bug」，甚至去回滚——
+而真相是新 HTML 配旧 JS，两边都没错。
+
+**适用边界**
+
+只对「有静态缓存层的站点」成立。纯 SSR（每次回源）没有这个问题。
+
+---
+
+## 29. 改了配置没生效：它是编译期常量
+
+**现象**
+
+改了数据库 / 改了环境变量 / 改了 JSON 文件，页面数据没变。
+
+**判断信号**
+
+```bash
+grep -rn "PROFILE\|projects:" src/ worker.js deploy/ 2>/dev/null | head
+```
+
+如果配置出现在**源码常量**里（`const PROFILE = {...}`），而不是读库/读文件：
+
+```js
+const PROFILE = { projects: [ /* 写死在这里 */ ] };
+export default { async fetch(req, env) { return json(PROFILE); } }
+```
+
+→ 改数据库当然没用。**必须重新构建/部署，它才会变。**
+
+**根因**
+
+同一份配置可能有三个来源，优先级还不同：
+
+```
+① 源码常量     → 编译进产物，改源码才生效
+② 数据库/文件  → 运行时读取，改了就生效
+③ 缓存         → 读得快，但可能滞后
+```
+
+「改了没反应」要先分清是哪种。**看代码里有没有 `const` 直接定义那份数据**，一眼就能排除。
+
+**解法**
+
+- 短期：改源码 → 重新部署
+- 长期：把需要运维改的数据挪到数据库或配置文件，别硬编码
+
+**代价**
+
+会去翻部署日志、怀疑缓存、怀疑权限——而实际只差一次 `deploy`。
+
+**适用边界**
+
+只对「配置真的被编译进产物」成立。读环境变量的 Worker 属于 ②，改完要重新 deploy 但不用改源码。
