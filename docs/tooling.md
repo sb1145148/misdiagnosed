@@ -462,6 +462,107 @@ grep -rl "SOME_" . 2>/dev/null | head          # 放宽到前缀
 只对「错误码可能被拼接、或来自另一层」成立。
 有些情况确实就是找不到，别把这条当成万能的。
 
+---
+
+## 27. `cmd | tail` 让退出码永远是 0
+
+**现象**
+
+```bash
+wrangler pages deploy . | tail -5
+echo $?          # 0
+```
+
+看起来成功，实际上部署被超时杀了——日志停在 `Uploading... (29/31)`。
+
+**判断信号**
+
+```bash
+set -o pipefail
+false | tail -1; echo "退出码=$?"     # 有 pipefail → 1；没有 → 0
+```
+
+或者更直接：**看输出里有没有那句「成功标记」**（`Deployment complete!`、`✨ Done`），而不是看退出码。
+
+**根因**
+
+管道的退出码是**最后一个命令**的退出码。`tail` 成功读完输入就返回 0，
+前面的命令是死是活它不管。
+
+**解法**
+
+```bash
+set -o pipefail          # 管道里任一命令失败 → 整体失败
+cmd 2>&1 | tail -20
+```
+
+或者不要管道，把输出写文件再看：
+
+```bash
+cmd > /tmp/out.log 2>&1; rc=$?; tail -5 /tmp/out.log; echo "rc=$rc"
+```
+
+**代价**
+
+把一次**失败的部署**当成成功，然后去别处找「为什么页面没变」——
+它和条目 26（缓存）的症状完全一样，很难区分。
+
+**适用边界**
+
+所有 `| head`、`| tail`、`| grep` 的用法。脚本里尤其危险，因为没人盯着看。
+
+---
+
+## 28. 数据看起来是空的，其实是外面包了一层
+
+**现象**
+
+```bash
+curl -s https://api.example.com/api/profile | jq '.projects | length'
+# 0
+```
+
+但页面明明显示着项目列表。
+
+**判断信号**
+
+```bash
+curl -s https://api.example.com/api/profile | jq 'keys'
+```
+
+顶层是 `["ok", "data"]` 而不是 `["projects", "name"]` → 读的是信封，不是信。
+
+**根因**
+
+接口统一包了一层：
+
+```json
+{ "ok": true, "data": { "projects": [ ... ] } }
+```
+
+**「字段不存在」和「空数组」返回的东西是一样的**——都是 `null` 或 0，
+很容易误判成「后端没数据」。
+
+**解法**
+
+```bash
+jq '.data.projects | length'
+```
+
+写代码时也一样：先打一行 `Object.keys(resp)`，确认层级再取值。
+
+**代价**
+
+会得出「接口没返回数据」「后端挂了」的结论，然后去查服务端——
+而数据一直在，只是多了一层。
+
+**适用边界**
+
+所有「统一响应信封」的设计（`{ok,data}`、`{code,message,result}`、`{success,payload}`）。
+反过来说，这也是个设计权衡：信封让错误处理统一，但让调试多一次翻层。
+
+---
+
 ## 附：常用判断命令速查
 
 ```bash
