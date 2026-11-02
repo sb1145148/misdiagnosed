@@ -308,3 +308,66 @@ export default { async fetch(req, env) { return json(PROFILE); } }
 **适用边界**
 
 只对「配置真的被编译进产物」成立。读环境变量的 Worker 属于 ②，改完要重新 deploy 但不用改源码。
+
+---
+
+## 30. 私有资源读不到时，返回的是 404 不是 403
+
+**现象**
+
+换了新 token 之后，读私有仓库返回 404，但仓库明明存在；同一个 token 读公开仓库一切正常。
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $T" \
+  https://api.github.com/repos/owner/private-repo
+# 404
+```
+
+**判断信号**
+
+**拿同一个 token 打一个同名公开仓库**：
+
+```bash
+/repos/owner/public-repo    → 200
+/repos/owner/private-repo   → 404     ← 权限问题，不是拼写问题
+```
+
+两个都 404 才可能是仓库名写错或 token 无效（后者其实是 401）。
+
+**根因**
+
+GitHub 对**无权访问**的私有资源返回 404，而不是 403 —— 故意把「你不能看」伪装成「它不存在」，避免泄露仓库的存在性。
+
+所以 404 有两种完全不同的含义：
+
+```
+404 = 不存在
+404 = 存在，但你看不见
+```
+
+**解法**
+
+查权限，不要查拼写：
+
+- **fine-grained token**：Repository access 要选中该仓库（或选 "All repositories"），权限至少 `Contents: Read` + `Metadata: Read`
+- **classic token**：勾 `repo`
+- 验证一条命令就够：
+
+```bash
+curl -s -H "Authorization: Bearer $T" https://api.github.com/user | jq -r .login   # 令牌是否有效
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $T" \
+  https://api.github.com/repos/<owner>/<repo>                                      # 200 才算有权限
+```
+
+**代价**
+
+会去反复核对仓库名、分支名、网络、大小写，甚至怀疑 GitHub 挂了 —— 而实际只是权限没给。
+
+**适用边界**
+
+GitHub 的 REST / GraphQL 都这样；但**不是所有接口**都这样：Actions、Packages 这类在部分场景下会返回 403。所以「404 一定是权限」这句只在**仓库/内容读取**这类接口上成立。
+
+**顺带两条同源的坑**
+
+1. **令牌前缀不代表权限**：`ghp_`（classic）、`github_pat_`（fine-grained）、`gho_`（OAuth）都能读私有仓库，只看它有没有对应权限。前缀只决定「用哪套规则校验」。
+2. **GitHub App 令牌只有 1 小时有效期**：拿它当长期服务的凭据（比如塞进 Worker secret）会在某天静默失效，且错误表现可能是「数据少了一截」而不是报错。
