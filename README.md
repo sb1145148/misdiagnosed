@@ -83,6 +83,9 @@
 | [26](docs/platform-quirks.md#26-改了代码部署成功用户看到的还是旧的) | 改了代码、部署成功，用户看到的还是旧的 | 线上 `curl` 到的字节数和本地文件对不上 |
 | [29](docs/platform-quirks.md#29-改了配置没生效它是编译期常量) | 改了配置没生效：它是编译期常量 | `grep` 到那份数据写在源码的 `const` 里 |
 | [30](docs/platform-quirks.md#30-私有资源读不到时返回的是-404-不是-403) | 私有资源读不到时，返回的是 404 不是 403 | 同一 token 读公开仓库 200、读私有仓库 404 |
+| [31](docs/platform-quirks.md#31-powershell-脚本不带-bom中文注释把解析搞崩) | PowerShell 脚本不带 BOM，中文注释把解析搞崩 | `pwsh` 正常、`powershell.exe` 报「字符串缺少终止符」 |
+| [32](docs/platform-quirks.md#32-应用崩溃了但事件日志干净得像没事发生) | 应用崩溃了，但事件日志干净得像没事发生 | 有崩溃转储，事件日志里 0 条 `Application Error` |
+| [33](docs/platform-quirks.md#33-教程里的-脚本ps1-在这台机器上直接跑不了) | 教程里的 `.\脚本.ps1` 在这台机器上直接跑不了 | `Get-ExecutionPolicy -List` 全是 Undefined |
 
 ### 工具
 | # | 坑 | 一句话信号 |

@@ -437,3 +437,188 @@ UTF-8 的中文是 3 字节一组，GBK 按 2 字节一组去切，切出来的�
 
 用编辑器工具（包括 AI 写文件）生成 `.ps1` 时，**默认几乎都是无 BOM UTF-8**。
 所以「脚本里只要有中文，就显式确认 BOM」应该当成一条固定检查项。
+
+## 32. 应用崩溃了，但事件日志干净得像没事发生
+
+**现象**
+
+VS Code 窗口反复崩溃，提示：
+
+```text
+窗口意外终止（原因:"crashed"，代码:"-1073741819"）
+```
+
+**一天崩 28 次，每 2–6 分钟一次**，根本没法用。
+
+去「事件查看器 → Windows 日志 → 应用程序」找 `Application Error`：**一条都没有。**
+
+**判断信号**
+
+三件事同时成立，就该怀疑日志本身被掐了：
+
+1. 应用**确实**在崩（有自己的崩溃转储）
+2. 事件日志里**完全没有** `Application Error` / `Windows Error Reporting` 条目
+3. 机器上装了安全软件 / "优化"工具
+
+查一下错误上报有没有被策略关掉：
+
+```powershell
+Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting' |
+  Select-Object Disabled, DontShowUI
+#  Disabled = 1      ← 就是它
+```
+
+**根因**
+
+**安全软件（本例是 360 安全卫士）把 WER 的组策略写成了 `Disabled=1`**，
+美其名曰"关闭错误报告，节省磁盘空间"。
+
+结果是：程序崩溃 → Windows 想记录 → 策略说别记 → **事件日志里什么都没有**。
+
+**顺带还有一个坑**：即使恢复了 WER，**Electron 类应用也不会进事件日志** ——
+它们用自带的 Crashpad 抓 minidump（在 `%APPDATA%\<App>\Crashpad\reports`），
+进程异常被自己接住了，压根走不到 Windows 的错误上报。
+
+所以对这种应用，「事件日志」这条路本身就不通，得靠二分法定位。
+
+**解法**
+
+**① 恢复错误上报（能救大部分原生应用）**
+
+```powershell
+$k = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting'
+Remove-ItemProperty -Path $k -Name 'Disabled' -ErrorAction SilentlyContinue
+New-ItemProperty -Path $k -Name 'DontShowUI' -Value 1 -PropertyType DWord -Force | Out-Null
+```
+
+> `DontShowUI=1` = 只记录不弹窗，排查时够用。
+
+**② Electron 类应用：直接二分关闭可疑特性**
+
+本例最后靠这个办法解决：
+
+```json
+"disable-hardware-acceleration": true,   // 关 GPU 渲染
+"editor.inlineSuggest.enabled": false    // 关 AI 内联建议
+```
+
+再清掉渲染缓存（`GPUCache`、`DawnGraphiteCache`、`Code Cache` 等），
+**13 分钟不再崩**，确认元凶是 GPU 加速路径。
+
+**代价**
+
+- 会去怀疑扩展、内存、硬盘、系统更新、驱动……**唯独想不到"日志被关了"**
+- 每次失败都留下一个 1 MB 的 minidump，但没有符号，**看不出是哪个模块**
+
+**适用边界**
+
+- `Disabled=1` 这种组策略**只有安全软件或域控会写**，普通用户权限改不到
+- 安全软件的"优化"会被再次执行 —— 恢复后要验证它有没有写回去
+- **不是所有应用都走 WER**：Electron（VS Code、Slack）、Chromium 系都自带 crasher
+- 退出码 `-1073741819` = `0xC0000005` = ACCESS_VIOLATION，是原生内存越界，不是配置错误
+
+**一句话**
+
+> **"日志里没有错误"不等于"没有发生错误"。**
+> 排查之前，先确认记录日志的开关还开着。
+
+## 33. 教程里的 `.\脚本.ps1` 在这台机器上直接跑不了
+
+**现象**
+
+照着文档敲：
+
+```powershell
+.\setup.ps1
+```
+
+报错：
+
+```text
+无法加载文件 .\setup.ps1，因为在此系统上禁止运行脚本。
+有关详细信息，请参阅 about_Execution_Policies。
+    + CategoryInfo    : SecurityError: (:) [], PSSecurityException
+    + FullyQualifiedErrorId : UnauthorizedAccess
+```
+
+**但同样的脚本，加个开关又能跑：**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup.ps1   # 成功
+```
+
+**判断信号**
+
+查所有范围的执行策略：
+
+```powershell
+Get-ExecutionPolicy -List
+```
+
+**关键是看 CurrentUser 这一行：**
+
+```text
+        Scope ExecutionPolicy
+        ----- ---------------
+MachinePolicy       Undefined
+   UserPolicy       Undefined
+      Process       Undefined
+  CurrentUser       Undefined      ← 等于 Restricted（默认禁止）
+ LocalMachine       Undefined
+```
+
+**根因**
+
+**Windows 客户端默认就是 `Restricted`（禁止所有脚本）** —— 而 Cloudflare、GitHub、各种工具的中文文档里，
+清一色写成 `.\xxx.ps1`，因为作者自己的机器早就改过了。
+
+于是「文档没错、脚本没错、就是跑不了」，且报错出现在**加载阶段**，
+看起来像文件损坏或杀软拦截（见 #32）。
+
+**解法**
+
+**改当前用户的执行策略，不要改机器级，也不要动不动用 Bypass：**
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+改完立刻生效，**不需要管理员权限，不影响其他用户**。
+
+**三种策略的取舍**
+
+| 策略 | 自己写的脚本 | 从网上下载的脚本 |
+| --- | --- | --- |
+| `Restricted`（默认） | ❌ 全部禁止 | ❌ |
+| `RemoteSigned`（推荐） | ✅ 直接跑 | ⚠️ 需签名或 `Unblock-File` |
+| `Bypass` | ✅ | ✅ 无限制（风险高） |
+
+**从网上下载的脚本要额外解标记：**
+
+```powershell
+Unblock-File .\downloaded.ps1     # 去掉"来自网络"标记（Zone.Identifier 流）
+Get-Item .\downloaded.ps1 -Stream *   # 之前能看到 :Zone.Identifier:$DATA
+```
+
+**代价**
+
+会先去怀疑：
+
+- 文件是不是坏了（其实是完整文件）
+- 杀毒软件拦了（`SecurityError` 和 AV 的拦截提示长得很像）
+- PowerShell 版本不对
+- 路径/中文名问题
+
+**而实际只有一条命令的差距。**
+
+**适用边界**
+
+- 只影响 `.ps1` / `.psm1` / `.psd1` 的**加载**
+- **不影响**：`powershell -Command "..."`、`-File` 带 Bypass、cmd 批处理、已签名的脚本
+- `CurrentUser` 作用域只改当前账户，**不需要管理员**
+- 企业环境有 `MachinePolicy` / `UserPolicy`（组策略）时，**改 CurrentUser 也无效** —— 那得找 IT
+
+**顺带一条**
+
+**给别人的脚本里如果有 `.ps1`，最好在 README 里直接给这条 `Set-ExecutionPolicy` 命令**，
+比事后让用户查「about_Execution_Policies」省事得多。
