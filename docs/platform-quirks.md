@@ -371,3 +371,69 @@ GitHub 的 REST / GraphQL 都这样；但**不是所有接口**都这样：Actio
 
 1. **令牌前缀不代表权限**：`ghp_`（classic）、`github_pat_`（fine-grained）、`gho_`（OAuth）都能读私有仓库，只看它有没有对应权限。前缀只决定「用哪套规则校验」。
 2. **GitHub App 令牌只有 1 小时有效期**：拿它当长期服务的凭据（比如塞进 Worker secret）会在某天静默失效，且错误表现可能是「数据少了一截」而不是报错。
+
+## 31. PowerShell 脚本不带 BOM，中文注释把解析搞崩
+
+**现象**
+
+同一个 `.ps1`，用 `pwsh`（PowerShell 7）跑一切正常，用 `powershell.exe`（Windows PowerShell 5.1，计划任务默认调的就是它）跑却直接报语法错误：
+
+```text
+字符串缺少终止符: '。
+    + CategoryInfo : ParserError
+```
+
+报的行号还指在一个**看起来完全没问题**的行上（比如一句 `Write-Host "..."`）。
+
+**判断信号**
+
+先看文件开头三个字节：
+
+```powershell
+Format-Hex -Path .\setup-task.ps1 -Count 3
+#  EF BB BF  → 有 BOM
+#  23 20 64  → 没有 BOM（这里是 "# d"）
+```
+
+再用 Python 或 `Get-Content -Encoding UTF8` 读一遍：**内容明明是好的**。
+
+最后对比两个解释器：
+
+```powershell
+pwsh -File .\setup-task.ps1        # 正常
+powershell -File .\setup-task.ps1  # 报错
+```
+
+**根因**
+
+**Windows PowerShell 5.1 对「没有 BOM 的文件」按系统 ANSI 代码页（简中环境是 GBK/CP936）解码。**
+
+UTF-8 的中文是 3 字节一组，GBK 按 2 字节一组去切，切出来的字符里会出现 `’` `“` `”` 这类**在 PowerShell 里也算引号/终止符的字符**。
+
+于是解析器以为字符串在中文注释中间就结束了 —— 报错行号自然飘到后面去。
+
+**解法**
+
+保存成 **UTF-8 with BOM**：
+
+- VS Code：右下角编码 → `Save with Encoding` → `UTF-8 with BOM`
+- PowerShell：`[IO.File]::WriteAllText($p, $text, (New-Object System.Text.UTF8Encoding($true)))`
+
+改完立刻就好，代码一个字都不用动。
+
+**代价**
+
+会去怀疑括号配对、反引号续行、引号转义、PowerShell 版本差异……
+最坑的是：**报错信息是真的，但它指的位置是假的**。
+
+**适用边界**
+
+- 只影响 **Windows PowerShell 5.1** 读 **无 BOM 的 `.ps1` / `.psm1`**
+- PowerShell 7（`pwsh`）默认按 UTF-8 读，**不受影响** —— 所以会出现"我这台机器上是好的"
+- 反过来也成立：**给记事本看的 `.txt` 要 UTF-8 + BOM + CRLF**，否则记事本显示乱码
+- 已经踩过两次：`dsh-tools.ps1` 和 `setup-task.ps1`
+
+**顺带一条**
+
+用编辑器工具（包括 AI 写文件）生成 `.ps1` 时，**默认几乎都是无 BOM UTF-8**。
+所以「脚本里只要有中文，就显式确认 BOM」应该当成一条固定检查项。
