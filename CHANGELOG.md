@@ -1,5 +1,15 @@
 # 更新日志
 
+## 未发布（6）
+
+新增 2 条。
+
+- **#34** 一个 emoji 让整个脚本崩在错误处理里 —— 中文版 Windows 下 `sys.stdout` 是 GBK，
+  `print(f"⏸ …")` 抛 `UnicodeEncodeError`，位置正好在**限流分支**里，
+  于是「采集中断」看起来像网络问题。修法：`reconfigure(encoding="utf-8", errors="replace")` + 日志不用 emoji。
+- **#35** `python` 命令在，但执行返回 9009 —— `WindowsApps\python.exe` 是商店的应用执行别名，
+  `where` 找得到、`Get-Command` 找得到，**执行等于「命令不存在」**；最贵的后果是计划任务显示「成功」。
+
 ## 未发布（5）
 
 新增 3 条。

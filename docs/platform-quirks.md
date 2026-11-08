@@ -622,3 +622,218 @@ Get-Item .\downloaded.ps1 -Stream *   # 之前能看到 :Zone.Identifier:$DATA
 
 **给别人的脚本里如果有 `.ps1`，最好在 README 里直接给这条 `Set-ExecutionPolicy` 命令**，
 比事后让用户查「about_Execution_Policies」省事得多。
+
+## 34. 一个 emoji 让整个脚本崩在错误处理里
+
+**现象**
+
+一个跑了十几天都正常的采集脚本，某天开始「跑一会儿就没了」：
+
+- 日志里只有一行「开始采集」，**没有报错，没有结束**
+- 部分数据已经写盘（`.partial.json` 里有前 2 个账号）
+- 退出码 1，但控制台、日志、事件日志里都找不到原因
+
+同一份代码，昨天还是好的。
+
+**判断信号**
+
+看崩溃时**正在做什么**，而不是看「哪一步失败了」。
+
+这次的栈顶不在任何业务逻辑里，而在一句提示上：
+
+```text
+File "daily.py", line 83, in api
+    _cool_down()
+File "daily.py", line 56, in _cool_down
+    print(f"    ⏸ 被限流，全局冷却 {wait}s", flush=True)
+UnicodeEncodeError: 'gbk' codec can't encode character '\u23f8'
+```
+
+它是在**被限流之后、准备打印提示的时候**死的。
+
+两条快速确认：
+
+```powershell
+# 1) 把输出接到管道（编码会变成 locale），立刻复现
+python daily.py 2>&1 | ForEach-Object { $_ }
+```
+
+2）扫一遍源码里有没有 GBK 装不下的字符：
+
+```python
+bad = {}
+for i, line in enumerate(src.splitlines(), 1):
+    for ch in line:
+        try:
+            ch.encode("gbk")
+        except UnicodeEncodeError:
+            bad.setdefault(ch, []).append(i)
+
+for ch, lines in bad.items():
+    print(f"U+{ord(ch):04X}  {ch!r}  行数 {len(lines)}  首次行 {lines[:6]}")
+```
+
+（这段自己也可能崩在上面 —— 它要打印那个字符。所以跑它的时候加 `PYTHONIOENCODING=utf-8`。）
+
+**根因**
+
+**Windows 中文版的 Python 在输出被重定向（管道/文件）时，`sys.stdout` 的编码是 `gbk`（CP936），不是 UTF-8。**
+
+`print` 里出现 GBK 编不出来的字符（`⏸` `⚠️` `⏱` `↳` 这类符号）就会抛 `UnicodeEncodeError`。
+
+真正致命的是**位置**：这一句在 `except`/限流分支里——
+
+> **本该处理「被限流」的代码，自己把进程带走了。**
+
+于是症状看起来像「网络不好导致采集中断」，而不是「打印崩了」。
+
+**解法**
+
+两道保险一起上：
+
+```python
+# 1) 启动时把输出切到 UTF-8，最坏情况只显示成问号，不中止
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+```
+
+```python
+# 2) 日志里别用 emoji，用 ASCII 标记
+print(f"    [限流] 全局冷却 {wait}s", flush=True)
+```
+
+改完验证：**走管道跑一遍**，确认 `stdout.encoding` 已经变成 `utf-8`。
+
+**代价**
+
+会先去怀疑：
+
+- 被平台封了 / 限流了（它有 412，看起来完全说得通）
+- 网络超时
+- 磁盘写满
+- 进程被计划任务杀了
+
+而实际是**一行 `print`**。
+
+更贵的代价是：**它只在「被限流」这条路径上触发**。所以开发时跑得很顺，一上量就死，而且**每次都死在同一个地方、每次都看起来像别的毛病**。
+
+**适用边界**
+
+- 只影响 **Windows 中文版（CP936/GBK）**；Linux/macOS 默认 UTF-8，不会复现
+- **交互式终端可能正常，重定向就崩** —— 编码取决于 `isatty()` 和 locale
+- 计划任务、`Start-Process -RedirectStandardOutput`、CI 里捕获输出，**全都是重定向场景**，最容易踩
+- `PYTHONIOENCODING=utf-8` 可以绕过，但**要求每一个调用方都记得设**，不如在脚本里自己锁死
+
+**顺带一条**
+
+**把「`print` 只放 ASCII + 中文，不放 emoji」当成一条硬规矩。**
+
+这条规矩不贵（少几个装饰符号），而违反它的代价是**在错误处理路径上炸掉整个进程** —— 也就是你最需要日志的那一刻，日志没了。
+
+## 35. `python` 命令在，但执行返回 9009
+
+**现象**
+
+```powershell
+PS> where.exe python
+C:\Users\Administrator\AppData\Local\Microsoft\WindowsApps\python.exe
+
+PS> python --version
+（没有任何输出）
+
+PS> echo $LASTEXITCODE
+9009
+```
+
+`where` 找得到，**执行却等于「找不到命令」**。
+
+最阴的不是这个报错，是它的下游：
+
+- 写成 `python daily.py` 的计划任务，**任务状态显示「成功」，什么都没做**
+- 批处理里 `python xxx.py`，静默跳过，后面照跑
+- 有些机器上直接**弹出微软商店**的 Python 安装页
+
+**判断信号**
+
+```powershell
+# 1) 命令是从哪来的
+Get-Command python | Select-Object Source
+#   ...\WindowsApps\python.exe   ← 危险信号
+
+# 2) 退出码
+python -c "print(1)"; $LASTEXITCODE
+#   9009  = 不是程序报错，是根本没有这个程序
+
+# 3) 找真的解释器（绕开 PATH）
+Get-ChildItem 'C:\Users','C:\Program Files','D:\' -Filter python.exe -Recurse -ErrorAction SilentlyContinue |
+  Select-Object -First 10 FullName
+```
+
+再查一眼注册表里有没有登记安装：
+
+```powershell
+Get-ChildItem 'HKLM:\SOFTWARE\Python\PythonCore','HKCU:\SOFTWARE\Python\PythonCore' -ErrorAction SilentlyContinue
+```
+
+**根因**
+
+`C:\Users\<用户>\AppData\Local\Microsoft\WindowsApps\python.exe` **不是 Python**，
+它是 Windows 的「应用执行别名」（App Execution Alias）—— 一个 0 字节的重解析点，
+作用是把命令转发给商店应用。
+
+所以：
+
+- 系统**有** `python` 这个命令（`where` 找得到，`Get-Command` 找得到）
+- 但机器上**没有** Python，或者装了却没进 `PATH`
+- 退出码 9009 是 **shell 的「命令未找到」**，不是 Python 的
+
+**解法**
+
+方案一（推荐）：**脚本里别写 `python`，写绝对路径**。
+
+```powershell
+$py = 'C:\Users\Administrator\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe'
+& $py daily.py
+```
+
+方案二：用 `py` 启动器（**前提是它真的存在**，这台机器上就没有）：
+
+```powershell
+py -3 daily.py
+```
+
+方案三：装一个真 Python，并把「应用执行别名」里的 `python.exe` / `python3.exe` 关掉
+（设置 → 应用 → 高级应用设置 → 应用执行别名）。
+
+**代价**
+
+会先去怀疑：
+
+- 依赖没装（于是 `pip install` 折腾半天，而 `pip` 也是同一个存根）
+- 权限/杀软拦截
+- 脚本第一行 `#!/usr/bin/env python3` 有问题（那在 Windows 上本来就不生效）
+- 虚拟环境没激活
+
+最贵的一笔：**计划任务会报「成功」。** 没有退出码异常、没有事件日志，只有「今天怎么没数据」这一句话。
+
+**适用边界**
+
+- 只影响 Windows 10/11 自带的 `WindowsApps` 存根，且**只有 `python.exe` / `python3.exe` 这两个名字**
+- 商店版 Python 装好之后，同一个命令会变成真的 —— **所以「昨天还能跑」不代表今天还能跑**
+- 很多工具自带运行时（编辑器、打包的桌面应用、`uv` 的独立安装），**它们不在 `PATH` 里，但完全可用**
+- Linux/macOS 一般不会遇到，除非 `PATH` 里挂了个同名空壳
+
+**顺带一条**
+
+**判断「有没有装」不要用 `where`，用退出码。**
+
+```powershell
+(command -v python) -ne $null    # 只是"有这个名字"
+python -c "print(1)"; $LASTEXITCODE -eq 0   # 才是"真的能跑"
+```
+
+同理：**任何要交给计划任务去跑的命令，必须先在一个干净 shell 里用绝对路径验证过一次。**
+交互式终端里能跑，常常是因为当时的 `PATH` 和你手动 `activate` 过的东西不一样。

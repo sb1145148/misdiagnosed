@@ -86,6 +86,8 @@
 | [31](docs/platform-quirks.md#31-powershell-脚本不带-bom中文注释把解析搞崩) | PowerShell 脚本不带 BOM，中文注释把解析搞崩 | `pwsh` 正常、`powershell.exe` 报「字符串缺少终止符」 |
 | [32](docs/platform-quirks.md#32-应用崩溃了但事件日志干净得像没事发生) | 应用崩溃了，但事件日志干净得像没事发生 | 有崩溃转储，事件日志里 0 条 `Application Error` |
 | [33](docs/platform-quirks.md#33-教程里的-脚本ps1-在这台机器上直接跑不了) | 教程里的 `.\脚本.ps1` 在这台机器上直接跑不了 | `Get-ExecutionPolicy -List` 全是 Undefined |
+| [34](docs/platform-quirks.md#34-一个-emoji-让整个脚本崩在错误处理里) | 一个 emoji 让整个脚本崩在错误处理里 | 采集跑一半就没了，日志只有「开始」没有报错 |
+| [35](docs/platform-quirks.md#35-python-命令在但执行返回-9009) | `python` 命令在，但执行返回 9009 | `where python` 有输出、`$LASTEXITCODE` 是 9009 |
 
 ### 工具
 | # | 坑 | 一句话信号 |
