@@ -88,6 +88,8 @@
 | [33](docs/platform-quirks.md#33-教程里的-脚本ps1-在这台机器上直接跑不了) | 教程里的 `.\脚本.ps1` 在这台机器上直接跑不了 | `Get-ExecutionPolicy -List` 全是 Undefined |
 | [34](docs/platform-quirks.md#34-一个-emoji-让整个脚本崩在错误处理里) | 一个 emoji 让整个脚本崩在错误处理里 | 采集跑一半就没了，日志只有「开始」没有报错 |
 | [35](docs/platform-quirks.md#35-python-命令在但执行返回-9009) | `python` 命令在，但执行返回 9009 | `where python` 有输出、`$LASTEXITCODE` 是 9009 |
+| [36](docs/platform-quirks.md#36-在-electron-宿主里测-electron-程序它变成了-node) | 在 Electron 宿主里测 Electron 程序，它变成了 node | `--version` 打印 `v24.x`，而不是 `1.144.x` |
+| [37](docs/platform-quirks.md#37-程序装在-u-盘上崩溃码天天不一样签名却完全有效) | 程序装在 U 盘上：崩溃码天天不一样，签名却完全有效 | `Get-Volume` 显示 `Removable` + `Warning` |
 
 ### 工具
 | # | 坑 | 一句话信号 |
