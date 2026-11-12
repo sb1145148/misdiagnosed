@@ -90,6 +90,7 @@
 | [35](docs/platform-quirks.md#35-python-命令在但执行返回-9009) | `python` 命令在，但执行返回 9009 | `where python` 有输出、`$LASTEXITCODE` 是 9009 |
 | [36](docs/platform-quirks.md#36-在-electron-宿主里测-electron-程序它变成了-node) | 在 Electron 宿主里测 Electron 程序，它变成了 node | `--version` 打印 `v24.x`，而不是 `1.144.x` |
 | [37](docs/platform-quirks.md#37-程序装在-u-盘上崩溃码天天不一样签名却完全有效) | 程序装在 U 盘上：崩溃码天天不一样，签名却完全有效 | `Get-Volume` 显示 `Removable` + `Warning` |
+| [38](docs/platform-quirks.md#38-会话日志是一份凭据仓库) | 会话日志是一份凭据仓库 | 对话里贴过的 token，明文存在 session.v4.jsonl.zstd 里 |
 
 ### 工具
 | # | 坑 | 一句话信号 |

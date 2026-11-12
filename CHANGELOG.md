@@ -1,5 +1,14 @@
 # 更新日志
 
+## 未发布（8）
+
+新增 1 条。
+
+- **#38** 会话日志是一份凭据仓库 —— 对话里贴过的 token 明文存在 `session.v4.jsonl.zstd` 里
+  （本次实测：`github_pat_` 614 次、`cfut_` 403 次、`ghp_` 107 次，去重 16 + 8 个）。
+  关键方法：验证令牌别只看 401，要看错误正文（`Requires authentication` vs `Bad credentials`）；
+  Cloudflare 的 `9109` 才是「无效令牌」。备份上传到私有仓库时，凭据跟着走。
+
 ## 未发布（7）
 
 新增 2 条 + 更正 1 条。
