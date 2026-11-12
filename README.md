@@ -147,4 +147,4 @@ scripts/frame-check.py --identity DIR   # 目录名和头部里的 id/cwd 对不
 
 ## License
 
-MIT
+[MIT](LICENSE)
